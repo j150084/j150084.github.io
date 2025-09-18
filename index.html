@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Kunniakierros – Kierroslaskuri (Supabase)</title>
+<style>
+  html, body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#0f172a; color:#e5e7eb; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 12px; }
+  h1 { font-size: 20px; margin: 8px 0 12px; }
+  .card { background:#111827; border:1px solid #1f2937; border-radius:16px; padding:12px; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .col { flex:1 1 240px; min-width: 160px; }
+  label { display:block; font-size:12px; color:#9ca3af; margin:6px 0 4px; }
+  input, button { width:100%; box-sizing:border-box; padding:10px 12px; border-radius:12px; border:1px solid #374151; background:#0b1220; color:#e5e7eb; }
+  input::placeholder { color:#6b7280; }
+  button { cursor:pointer; font-weight:600; }
+  .btn { background:#2563eb; border-color:#1d4ed8; }
+  .btn.alt { background:#334155; border-color:#334155; }
+  .btn.warn { background:#b91c1c; border-color:#7f1d1d; }
+  .btn.good { background:#16a34a; border-color:#15803d; }
+  .pill { font-size:12px; padding:4px 8px; border-radius:999px; background:#0b1220; border:1px solid #374151; color:#93c5fd; white-space:nowrap; }
+  .tabs { display:flex; gap:6px; margin:10px 0 12px; }
+  .tab { flex:1; text-align:center; padding:10px; border-radius:12px; background:#0b1220; border:1px solid #334155; cursor:pointer; user-select:none; }
+  .tab.active { background:#1e293b; border-color:#3b82f6; }
+  .hide { display:none; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid #272b36; font-size:14px; }
+  th { color:#93c5fd; font-weight:600; }
+  .kpd { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; }
+  .kpd button { font-size:20px; padding:14px; }
+  .muted { color:#9ca3af; font-size:12px; }
+  .sticky { position:sticky; bottom:0; background:#0f172a; padding-top:8px; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:999px; background:#0b1220; border:1px solid #334155; font-size:12px; color:#e5e7eb; }
+  .topbar { display:flex; align-items:center; gap:8px; justify-content:space-between; }
+  .status { display:flex; gap:8px; align-items:center; }
+  .dot { width:8px; height:8px; border-radius:50%; background:#ef4444; display:inline-block; }
+  .dot.online { background:#22c55e; }
+  details.settings { margin-top:8px; }
+  details.settings summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>🏃‍♀️ Kunniakierros – Kierroslaskuri</h1>
+    <div class="status">
+      <span id="onlineDot" class="dot"></span>
+      <span id="onlineText" class="pill">Offline</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="col">
+        <label>Tapahtuman nimi</label>
+        <input id="eventName" placeholder="Esim. Leisku Kunniakierros 2025" />
+      </div>
+      <div class="col" style="max-width:200px">
+        <label>Kierroksen pituus (m)</label>
+        <input id="lapMeters" type="number" min="50" step="10" value="400" />
+      </div>
+      <div class="col" style="max-width:280px">
+        <label>Ajastin (valinnainen)</label>
+        <div class="row">
+          <button id="startTimer" class="btn good">▶ 60 min</button>
+          <button id="stopTimer" class="btn alt">⏸</button>
+          <span id="timer" class="pill">60:00</span>
+        </div>
+      </div>
+    </div>
+
+    <details class="settings">
+      <summary>⚙️ Asetukset (Supabase)</summary>
+      <div class="row" style="margin-top:8px">
+        <div class="col">
+          <label>Supabase URL</label>
+          <input id="sbUrl" placeholder="https://YOUR-PROJECT.supabase.co" />
+        </div>
+        <div class="col">
+          <label>Supabase anon key</label>
+          <input id="sbKey" placeholder="eyJhbGciOi..." />
+        </div>
+        <div class="col">
+          <label>Event ID (täsmää RLS-politiikkaan)</label>
+          <input id="eventId" placeholder="leisku-kk-2025-09-19" />
+        </div>
+        <div class="col" style="max-width:180px; align-self:flex-end;">
+          <button id="saveSettings" class="btn">Tallenna asetukset</button>
+        </div>
+      </div>
+      <p class="muted">Vinkki: kun asetukset tallennettu, tämä laite synkkaa rosterin ja kierrokset pilveen ja muiden laitteiden kanssa. Ilman asetuksia appi toimii täysin paikallisesti.</p>
+    </details>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="laps">Kierrokset</div>
+    <div class="tab" data-tab="athletes">Osallistujat</div>
+    <div class="tab" data-tab="summary">Yhteenveto</div>
+    <div class="tab" data-tab="log">Lokit</div>
+  </div>
+
+  <!-- Kierrosten syöttö -->
+  <section id="tab-laps" class="card">
+    <div class="row">
+      <div class="col" style="max-width:180px">
+        <label>Rintanumero</label>
+        <input id="bibInput" inputmode="numeric" pattern="[0-9]*" placeholder="Esim. 12" />
+      </div>
+      <div class="col">
+        <label>Osallistuja</label>
+        <input id="namePreview" placeholder="Nimi täyttyy automaattisesti" disabled />
+      </div>
+    </div>
+
+    <div class="kpd" style="margin:10px 0">
+      <button class="btn alt k" data-k="1">1</button>
+      <button class="btn alt k" data-k="2">2</button>
+      <button class="btn alt k" data-k="3">3</button>
+      <button class="btn alt k" data-k="4">4</button>
+      <button class="btn alt k" data-k="5">5</button>
+      <button class="btn alt k" data-k="6">6</button>
+      <button class="btn alt k" data-k="7">7</button>
+      <button class="btn alt k" data-k="8">8</button>
+      <button class="btn alt k" data-k="9">9</button>
+      <button class="btn alt" id="bksp">⌫</button>
+      <button class="btn alt k" data-k="0">0</button>
+      <button class="btn" id="addLap">➕ Lisää kierros</button>
+    </div>
+
+    <div class="row sticky">
+      <div class="col">
+        <button id="undo" class="btn alt">↶ Peru viimeisin</button>
+      </div>
+      <div class="col">
+        <button id="quickPlus" class="btn good">+1 viimeiselle</button>
+      </div>
+      <div class="col">
+        <span id="lastAction" class="muted">Viimeisin: –</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Osallistujat -->
+  <section id="tab-athletes" class="card hide">
+    <div class="row">
+      <div class="col" style="max-width:160px">
+        <label>Rintanumero</label>
+        <input id="newBib" type="number" min="1" placeholder="123" />
+      </div>
+      <div class="col">
+        <label>Nimi</label>
+        <input id="newName" placeholder="Etunimi Sukunimi" />
+      </div>
+      <div class="col" style="max-width:200px">
+        <label>&nbsp;</label>
+        <button id="addAthlete" class="btn">➕ Lisää osallistuja</button>
+      </div>
+    </div>
+
+    <div style="margin-top:10px; max-height:45vh; overflow:auto;">
+      <table>
+        <thead><tr><th>#</th><th>Nimi</th><th>Kierrokset</th><th>km</th><th></th></tr></thead>
+        <tbody id="athleteTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Yhteenveto -->
+  <section id="tab-summary" class="card hide">
+    <div class="row">
+      <div class="col"><span class="tag" id="totalAthletes">0 osallistujaa</span></div>
+      <div class="col"><span class="tag" id="totalLaps">0 kierrosta</span></div>
+      <div class="col"><span class="tag" id="totalKm">0.00 km</span></div>
+      <div class="col" style="max-width:300px">
+        <button id="exportCsv" class="btn alt">⤓ Vie CSV</button>
+      </div>
+    </div>
+    <div style="margin-top:10px; max-height:50vh; overflow:auto;">
+      <table>
+        <thead><tr><th>#</th><th>Nimi</th><th>Kierrokset</th><th>km</th><th>Viimeisin kierros</th></tr></thead>
+        <tbody id="summaryTable"></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="col">
+        <button id="resetEvent" class="btn warn">🗑 Nollaa tapahtuma (vain tämä laite)</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Lokit -->
+  <section id="tab-log" class="card hide">
+    <div style="max-height:55vh; overflow:auto;">
+      <table>
+        <thead><tr><th>Aika</th><th>#</th><th>Nimi</th><th>Toiminto</th></tr></thead>
+        <tbody id="logTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="muted" style="margin:12px 4px;">
+    Vinkit: Lisää osallistujat (synkataan pilveen jos asetukset on täytetty). Kierrosten syöttö: naputtele rintanumero → “Lisää kierros”.  
+    Peru virhe “Peru viimeisin”. Yhteenveto päivittyy ~1.5 s välein, ja näkyy kaikille kirjureille.
+  </p>
+</div>
+
+<script>
+  // --------- Tila ---------
+  const state = {
+    eventName: '',
+    lapMeters: 400,
+    athletes: {}, // { bib: { bib, name, laps, lastLapAt } }
+    log: [],
+    lastBib: null,
+    timerEnd: null,
+    timerTick: null,
+    sb: { url:'', key:'', eventId:'' },
+    online: false
+  };
+
+  const el = id => document.getElementById(id);
+  const KEY_LOCAL = 'kunniakierros_v2';
+  const fmtTime = ms => {
+    const s = Math.max(0, Math.ceil(ms/1000));
+    const m = Math.floor(s/60);
+    const ss = String(s%60).padStart(2,'0');
+    return `${m}:${ss}`;
+  };
+
+  // --------- Tallennus ---------
+  function saveLocal() {
+    const payload = {
+      eventName: state.eventName,
+      lapMeters: state.lapMeters,
+      athletes: state.athletes,
+      log: state.log,
+      timerEnd: state.timerEnd,
+      sb: state.sb
+    };
+    localStorage.setItem(KEY_LOCAL, JSON.stringify(payload));
+    renderAll();
+  }
+  function loadLocal() {
+    const raw = localStorage.getItem(KEY_LOCAL);
+    if (!raw) return;
+    try {
+      const d = JSON.parse(raw);
+      state.eventName = d.eventName || '';
+      state.lapMeters = d.lapMeters || 400;
+      state.athletes = d.athletes || {};
+      state.log = d.log || [];
+      state.timerEnd = d.timerEnd || null;
+      state.sb = d.sb || { url:'', key:'', eventId:'' };
+    } catch {}
+  }
+
+  // --------- UI perus ---------
+  function setActiveTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab===name));
+    ['laps','athletes','summary','log'].forEach(n => el('tab-'+n).classList.toggle('hide', n!==name));
+  }
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=> setActiveTab(t.dataset.tab)));
+
+  el('eventName').addEventListener('input', e=>{ state.eventName=e.target.value; saveLocal(); });
+  el('lapMeters').addEventListener('input', e=>{ state.lapMeters=Math.max(10, Number(e.target.value||400)); saveLocal(); });
+
+  // Asetukset
+  el('saveSettings').addEventListener('click', ()=>{
+    state.sb.url = el('sbUrl').value.trim();
+    state.sb.key = el('sbKey').value.trim();
+    state.sb.eventId = el('eventId').value.trim();
+    saveLocal();
+    pingSupabase(true); // koita heti
+    fetchRoster();      // hae jaettu rosteri
+  });
+
+  // Numeronäppis
+  document.querySelectorAll('.k').forEach(b=>b.addEventListener('click', ()=>{
+    el('bibInput').value += b.dataset.k; updateNamePreview();
+  }));
+  el('bksp').addEventListener('click', ()=>{
+    const v = el('bibInput').value; el('bibInput').value = v.slice(0, -1); updateNamePreview();
+  });
+  el('bibInput').addEventListener('input', updateNamePreview);
+  function updateNamePreview() {
+    const bib = el('bibInput').value.trim();
+    const a = state.athletes[bib];
+    el('namePreview').value = a ? a.name : '(tuntematon – lisää Osallistujat-välilehdellä)';
+  }
+
+  // Ajastin
+  function tickTimer() {
+    if(!state.timerEnd) return;
+    const left = state.timerEnd - Date.now();
+    if (left <= 0) {
+      clearInterval(state.timerTick); state.timerTick=null; state.timerEnd=null;
+      el('timer').textContent = '0:00';
+      saveLocal();
+      alert('Aika täynnä!');
+      return;
+    }
+    el('timer').textContent = fmtTime(left);
+  }
+  el('startTimer').addEventListener('click', ()=>{
+    state.timerEnd = Date.now() + 60*60*1000;
+    if (state.timerTick) clearInterval(state.timerTick);
+    state.timerTick = setInterval(tickTimer, 250);
+    saveLocal(); tickTimer();
+  });
+  el('stopTimer').addEventListener('click', ()=>{
+    if (state.timerTick) clearInterval(state.timerTick);
+    state.timerTick=null; state.timerEnd=null; el('timer').textContent='60:00'; saveLocal();
+  });
+
+  // --------- Supabase apuri ---------
+  async function supa(path, opts={}) {
+    if (!state.sb.url || !state.sb.key) throw new Error('No Supabase config');
+    const res = await fetch(`${state.sb.url}/rest/v1/${path}`, {
+      ...opts,
+      headers: {
+        'Content-Type':'application/json',
+        'apikey': state.sb.key,
+        'Authorization': `Bearer ${state.sb.key}`,
+        ...(opts.headers||{})
+      }
+    });
+    if (!res.ok) throw new Error(`Supabase error ${res.status}`);
+    const ct = res.headers.get('content-type') || '';
+    return ct.includes('application/json') ? res.json() : res.text();
+  }
+
+  // Online-indikaattori
+  async function pingSupabase(showAlerts=false) {
+    if (!state.sb.url || !state.sb.key) { setOnline(false); return; }
+    try {
+      // pieni kevyt kysely (0 riviä) – tarkistaa pääsyn
+      await supa(`laps?event_id=eq.${encodeURIComponent(state.sb.eventId)}&select=id&limit=1`);
+      setOnline(true);
+    } catch (e) {
+      setOnline(false);
+      if (showAlerts) alert('Supabase-yhteys ei toimi. Tarkista URL, anon key ja Event ID tai RLS-politiikka.');
+    }
+  }
+  function setOnline(val) {
+    state.online = val;
+    el('onlineDot').classList.toggle('online', val);
+    el('onlineText').textContent = val ? 'Online' : 'Offline';
+  }
+
+  // --------- Osallistujat (jaettu) ---------
+  el('addAthlete').addEventListener('click', async ()=>{
+    const bib = String(el('newBib').value||'').trim();
+    const name = String(el('newName').value||'').trim();
+    if(!bib || !name) { alert('Syötä rintanumero ja nimi.'); return; }
+
+    // Paikallinen kopio
+    if(!state.athletes[bib]) state.athletes[bib] = { bib, name, laps: 0, lastLapAt: null };
+    else state.athletes[bib].name = name;
+
+    // Pilveen (upsert)
+    if (state.online) {
+      try {
+        await supa('athletes', {
+          method:'POST',
+          headers:{ 'Prefer':'resolution=merge-duplicates' },
+          body: JSON.stringify([{ event_id: state.sb.eventId, bib, name }])
+        });
+      } catch(e){ console.warn(e); }
+    }
+    el('newBib').value=''; el('newName').value='';
+    saveLocal();
+  });
+
+  async function fetchRoster() {
+    if (!state.online) return;
+    try {
+      const rows = await supa(`athletes?event_id=eq.${encodeURIComponent(state.sb.eventId)}&select=event_id,bib,name,updated_at`);
+      for (const r of rows) {
+        const a = state.athletes[r.bib] || { bib:r.bib, name:r.name, laps:0, lastLapAt:null };
+        a.name = r.name;
+        state.athletes[r.bib] = a;
+      }
+      saveLocal();
+    } catch(e){ console.warn(e); }
+  }
+
+  // --------- Kierrokset (jaettu loki) ---------
+  el('addLap').addEventListener('click', addLapFromInput);
+  function addLapFromInput() {
+    const bib = String(el('bibInput').value||'').trim();
+    if(!bib) return;
+    addLap(bib);
+    // tyhjennetään kenttä ja pidetään fokus – toiveesi mukaan
+    el('bibInput').value = '';
+    updateNamePreview();
+    el('bibInput').focus();
+  }
+
+  async function addLap(bib) {
+    const a = state.athletes[bib];
+    if (!a) { alert('Rintanumeroa ei löydy. Lisää osallistuja.'); return; }
+
+    // Pilviloki ensin (jos mahdollista), jotta kaikki näkevät
+    if (state.online) {
+      try {
+        await supa('laps', {
+          method:'POST',
+          headers:{ 'Prefer':'return=minimal' },
+          body: JSON.stringify([{ event_id: state.sb.eventId, bib }])
+        });
+      } catch(e){ console.warn(e); }
+    }
+
+    // Paikallinen peilaus (välitön palautetuntuma)
+    a.laps += 1;
+    a.lastLapAt = Date.now();
+    state.log.unshift({ ts:a.lastLapAt, bib, action:'+1' });
+    state.lastBib = bib;
+    el('lastAction').textContent = `Viimeisin: #${bib} ${a.name} +1 (${new Date(a.lastLapAt).toLocaleTimeString()})`;
+    saveLocal();
+  }
+
+  el('quickPlus').addEventListener('click', ()=> {
+    if(!state.lastBib) { alert('Ei aiempaa urheilijaa.'); return; }
+    addLap(state.lastBib);
+  });
+
+  el('undo').addEventListener('click', ()=>{
+    // Paikallinen undo (pilvessä ei tueta poistamista tässä pikaversiossa)
+    const entry = state.log.find(e=>e.action==='+1');
+    if(!entry) return;
+    const bib = entry.bib;
+    const a = state.athletes[bib];
+    if (a && a.laps>0) a.laps -= 1;
+    state.log.unshift({ ts: Date.now(), bib, action:'UNDO' });
+    el('lastAction').textContent = `Peruttu: #${bib} ${a? a.name:''}`;
+    saveLocal();
+  });
+
+  // Yhteenveto – noudetaan pilvestä laskenta (poll)
+  async function fetchLapCounts() {
+    if (!state.online) return;
+    try {
+      const rows = await supa(`laps?event_id=eq.${encodeURIComponent(state.sb.eventId)}&select=bib,ts`);
+      const byBib = {};
+      for (const r of rows) {
+        byBib[r.bib] = byBib[r.bib] || { laps:0, last: null };
+        byBib[r.bib].laps += 1;
+        if (!byBib[r.bib].last || new Date(r.ts) > byBib[r.bib].last) byBib[r.bib].last = new Date(r.ts);
+      }
+      for (const bib of Object.keys(byBib)) {
+        const a = state.athletes[bib] || { bib, name:`(#${bib})`, laps:0, lastLapAt:null };
+        a.laps = byBib[bib].laps;
+        a.lastLapAt = byBib[bib].last ? byBib[bib].last.getTime() : a.lastLapAt;
+        state.athletes[bib] = a;
+      }
+      saveLocal();
+    } catch(e){ console.warn(e); }
+  }
+
+  // --------- Taulujen renderöinti ---------
+  function renderAthletes() {
+    const tbody = el('athleteTable'); tbody.innerHTML='';
+    const lapKm = state.lapMeters/1000;
+    Object.values(state.athletes).sort((a,b)=> Number(a.bib)-Number(b.bib)).forEach(a=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${a.bib}</td>
+        <td>${a.name}</td>
+        <td>${a.laps||0}</td>
+        <td>${((a.laps||0)*lapKm).toFixed(3)}</td>
+        <td></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderSummary() {
+    const tbody = el('summaryTable'); tbody.innerHTML='';
+    const lapKm = state.lapMeters/1000;
+    let totLaps = 0, totKm = 0;
+    Object.values(state.athletes).sort((a,b)=> Number(a.bib)-Number(b.bib)).forEach(a=>{
+      const laps = a.laps||0; const km = laps*lapKm;
+      totLaps += laps; totKm += km;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${a.bib}</td>
+        <td>${a.name}</td>
+        <td>${laps}</td>
+        <td>${km.toFixed(3)}</td>
+        <td>${a.lastLapAt ? new Date(a.lastLapAt).toLocaleTimeString() : ''}</td>`;
+      tbody.appendChild(tr);
+    });
+    el('totalAthletes').textContent = `${Object.keys(state.athletes).length} osallistujaa`;
+    el('totalLaps').textContent = `${totLaps} kierrosta`;
+    el('totalKm').textContent = `${totKm.toFixed(2)} km`;
+  }
+
+  function renderLog() {
+    const tbody = el('logTable'); tbody.innerHTML='';
+    state.log.slice(0,500).forEach(e=>{
+      const a = state.athletes[e.bib];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${new Date(e.ts).toLocaleTimeString()}</td>
+        <td>${e.bib}</td>
+        <td>${a ? a.name : ''}</td>
+        <td>${e.action}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderHeaderAndSettings() {
+    el('eventName').value = state.eventName || '';
+    el('lapMeters').value = state.lapMeters || 400;
+    el('sbUrl').value = state.sb.url || '';
+    el('sbKey').value = state.sb.key || '';
+    el('eventId').value = state.sb.eventId || '';
+  }
+
+  function renderAll() {
+    renderHeaderAndSettings();
+    renderAthletes();
+    renderSummary();
+    renderLog();
+    updateNamePreview();
+    if (state.timerEnd && !state.timerTick) { state.timerTick=setInterval(tickTimer, 250); tickTimer(); }
+  }
+
+  // Export CSV (paikallinen / viimeisin näkymä)
+  el('exportCsv').addEventListener('click', ()=>{
+    const rows = [['Event', state.eventName], ['Lap_m', state.lapMeters], [], ['bib','name','laps','km','lastLapAt']];
+    const lapKm = state.lapMeters / 1000;
+    Object.values(state.athletes).sort((a,b)=> Number(a.bib)-Number(b.bib)).forEach(a=>{
+      const km = ((a.laps||0) * lapKm).toFixed(3);
+      rows.push([a.bib, a.name, a.laps||0, km, a.lastLapAt ? new Date(a.lastLapAt).toISOString() : '']);
+    });
+    const csv = rows.map(r=> r.map(cell=>{
+      const s = String(cell??''); return /[",;\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s;
+    }).join(';')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeName = (state.eventName || 'kunniakierros').replace(/[^\w\-]+/g,'_');
+    a.href = url; a.download = `${safeName}_yhteenveto.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // Nollaus (vain paikallinen kopio)
+  el('resetEvent').addEventListener('click', ()=>{
+    if(!confirm('Nollataanko paikallinen data tältä laitteelta? Pilvessä olevat tiedot säilyvät.')) return;
+    localStorage.removeItem(KEY_LOCAL);
+    Object.assign(state, { eventName:'', lapMeters:400, athletes:{}, log:[], lastBib:null, timerEnd:null, sb:{ url:'', key:'', eventId:'' } });
+    renderAll();
+  });
+
+  // --------- Init ---------
+  loadLocal();
+  renderAll();
+  pingSupabase(false);
+  fetchRoster();
+  // Pollataan rosteri & lap-countit
+  setInterval(()=>{ pingSupabase(false); fetchLapCounts(); }, 1500);
+</script>
+</body>
+</html>
