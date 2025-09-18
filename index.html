@@ -376,6 +376,7 @@
           headers:{ 'Prefer':'resolution=merge-duplicates' },
           body: JSON.stringify([{ event_id: state.sb.eventId, bib, name }])
         });
+        fetchRoster();
       } catch(e) { alert(e.message); }
     }
     el('newBib').value=''; el('newName').value='';
@@ -572,10 +573,12 @@
   fetchRoster();
   // Pollataan rosteri & lap-countit
   setInterval(()=>{
-  if (!state.sb.url || !state.sb.key || !state.sb.eventId) return;
-  pingSupabase(false);
-  fetchLapCounts();
-}, 1500);
+    if (!state.sb.url || !state.sb.key || !state.sb.eventId) return;
+    pingSupabase(false);
+    fetchLapCounts();
+    fetchRoster();
+  }, 1500);
+
 
 </script>
 </body>
