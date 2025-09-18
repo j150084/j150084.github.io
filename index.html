@@ -267,12 +267,19 @@
 
   // Asetukset
   el('saveSettings').addEventListener('click', ()=>{
-    state.sb.url = el('sbUrl').value.trim();
-    state.sb.key = el('sbKey').value.trim();
-    state.sb.eventId = el('eventId').value.trim();
-    saveLocal();
-    pingSupabase(true); // koita heti
-    fetchRoster();      // hae jaettu rosteri
+// Asetuskentät päivittyvät heti stateen (ei tyhjenny enää renderöinnissä)
+    el('sbUrl').addEventListener('input', (e) => {
+      state.sb.url = e.target.value.trim();
+      saveLocal();
+    });
+    el('sbKey').addEventListener('input', (e) => {
+      state.sb.key = e.target.value.trim();
+      saveLocal();
+    });
+    el('eventId').addEventListener('input', (e) => {
+      state.sb.eventId = e.target.value.trim();
+      saveLocal();
+    });
   });
 
   // Numeronäppis
@@ -332,16 +339,19 @@
 
   // Online-indikaattori
   async function pingSupabase(showAlerts=false) {
-    if (!state.sb.url || !state.sb.key) { setOnline(false); return; }
+    if (!state.sb.url || !state.sb.key || !state.sb.eventId) { 
+      setOnline(false); 
+      return; 
+    }
     try {
-      // pieni kevyt kysely (0 riviä) – tarkistaa pääsyn
       await supa(`laps?event_id=eq.${encodeURIComponent(state.sb.eventId)}&select=id&limit=1`);
       setOnline(true);
     } catch (e) {
       setOnline(false);
-      if (showAlerts) alert('Supabase-yhteys ei toimi. Tarkista URL, anon key ja Event ID tai RLS-politiikka.');
+      if (showAlerts) alert('Supabase-yhteys ei toimi. Tarkista URL, anon key, Event ID ja RLS-politiikka.');
     }
   }
+
   function setOnline(val) {
     state.online = val;
     el('onlineDot').classList.toggle('online', val);
@@ -366,7 +376,7 @@
           headers:{ 'Prefer':'resolution=merge-duplicates' },
           body: JSON.stringify([{ event_id: state.sb.eventId, bib, name }])
         });
-      } catch(e){ console.warn(e); }
+      } catch(e) { alert(e.message); }
     }
     el('newBib').value=''; el('newName').value='';
     saveLocal();
@@ -409,7 +419,7 @@
           headers:{ 'Prefer':'return=minimal' },
           body: JSON.stringify([{ event_id: state.sb.eventId, bib }])
         });
-      } catch(e){ console.warn(e); }
+      } catch(e) { alert(e.message); }
     }
 
     // Paikallinen peilaus (välitön palautetuntuma)
@@ -561,7 +571,12 @@
   pingSupabase(false);
   fetchRoster();
   // Pollataan rosteri & lap-countit
-  setInterval(()=>{ pingSupabase(false); fetchLapCounts(); }, 1500);
+  setInterval(()=>{
+  if (!state.sb.url || !state.sb.key || !state.sb.eventId) return;
+  pingSupabase(false);
+  fetchLapCounts();
+}, 1500);
+
 </script>
 </body>
 </html>
