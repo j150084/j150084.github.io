@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live – Kunniakierros</title>
+<style>
+  :root { --bg:#0f172a; --card:#111827; --muted:#9ca3af; --line:#1f2937; --pill:#0b1220; --blue:#93c5fd; }
+  html,body{margin:0;background:var(--bg);color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  h1{margin:6px 0 10px;font-size:22px}
+  .muted{color:var(--muted);font-size:12px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--pill);border:1px solid #374151;font-size:12px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#ef4444}
+  .dot.online{background:#22c55e}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px;border-bottom:1px solid #272b36}
+  th{color:var(--blue);text-align:left;font-weight:600}
+  .rank{width:52px;text-align:right;opacity:.9}
+  .right{text-align:right}
+  .big{font-size:28px;font-weight:800;letter-spacing:.5px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  @media (max-width:720px){ .grid{grid-template-columns:1fr 1fr 1fr} .big{font-size:22px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <h1 id="title">Live – Kunniakierros</h1>
+    <div class="pill"><span id="dot" class="dot"></span><span id="status">Offline</span></div>
+  </div>
+
+  <div class="card" style="margin-bottom:10px">
+    <div class="grid">
+      <div><div class="muted">Osallistujia</div><div id="totAth" class="big">0</div></div>
+      <div><div class="muted">Kierroksia</div><div id="totLaps" class="big">0</div></div>
+      <div><div class="muted">Kilometrejä</div><div id="totKm" class="big">0.00</div></div>
+    </div>
+    <div class="muted" id="updated" style="margin-top:6px">Päivitetty –</div>
+  </div>
+
+  <div class="card">
+    <table id="tbl">
+      <thead><tr>
+        <th class="rank">Sija</th>
+        <th>#</th><th>Nimi</th>
+        <th class="right">Kierrokset</th>
+        <th class="right">km</th>
+        <th class="right">Viimeisin kierros</th>
+      </tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+
+  <p class="muted" style="margin:10px 2px">Sivu päivittyy automaattisesti ~1,5 s välein.</p>
+</div>
+
+<script>
+/*** MUOKKAA NÄMÄ VIISI RIVIÄ ***/
+const SUPABASE_URL = 'https://jzfvuxtvnzyrqtenfaqz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6ZnZ1eHR2bnp5cnF0ZW5mYXF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxNzc2NTksImV4cCI6MjA3Mzc1MzY1OX0.I2uZCFfoaIyEQbFDDgZDCesJ1pjjpQTcaQFC5zH8kcI'; // julkinen, RLS rajaa vain SELECTiin
+const EVENT_ID = 'leisku-kk-2025-09-19';
+const EVENT_NAME = 'Leisku Kunniakierros 2025';
+const LAP_METERS = 400;
+/*** (valinnainen) voit myös ohittaa nämä URL-parametreilla ?event=...&name=...&lap=400 ***/
+{
+  const p = new URLSearchParams(location.search);
+  if (p.get('event')) window.EVENT_ID = p.get('event');
+  if (p.get('name'))  window.EVENT_NAME = p.get('name');
+  if (p.get('lap'))   window.LAP_METERS = Number(p.get('lap'))||LAP_METERS;
+}
+
+document.getElementById('title').textContent = `Live – ${EVENT_NAME}`;
+
+const el = id => document.getElementById(id);
+const fmtKM = (x) => new Intl.NumberFormat('fi-FI', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(x);
+const fmtTime = (d) => d ? new Date(d).toLocaleTimeString() : '';
+
+async function supa(path){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function refresh(){
+  try{
+    // hae rosteri ja kierrosloki
+    const [ath, laps] = await Promise.all([
+      supa(`athletes?event_id=eq.${encodeURIComponent(EVENT_ID)}&select=bib,name`),
+      supa(`laps?event_id=eq.${encodeURIComponent(EVENT_ID)}&select=bib,ts`)
+    ]);
+
+    // aggregoi
+    const byBib = new Map();
+    for (const a of ath) byBib.set(a.bib, { bib:a.bib, name:a.name, laps:0, last:null });
+    for (const l of laps){
+      if(!byBib.has(l.bib)) byBib.set(l.bib, { bib:l.bib, name:`(#${l.bib})`, laps:0, last:null });
+      const row = byBib.get(l.bib);
+      row.laps += 1;
+      const t = new Date(l.ts);
+      if (!row.last || t > row.last) row.last = t;
+    }
+
+    // taulukko + summat
+    const list = [...byBib.values()]
+      .sort((a,b)=>{
+        if (b.laps !== a.laps) return b.laps - a.laps;
+        if (a.last && b.last) return b.last - a.last;
+        return (Number(a.bib)||0) - (Number(b.bib)||0);
+      });
+
+    const lapKm = (LAP_METERS||400)/1000;
+    let totA = list.length, totL = 0, totK = 0;
+    const tbody = el('body'); tbody.innerHTML = '';
+    list.forEach((r, i)=>{
+      const km = r.laps * lapKm; totL += r.laps; totK += km;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="rank">${i+1}.</td>
+        <td>${r.bib}</td>
+        <td>${r.name || `(#${r.bib})`}</td>
+        <td class="right">${r.laps}</td>
+        <td class="right">${km.toFixed(3)}</td>
+        <td class="right">${fmtTime(r.last)}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    el('totAth').textContent = totA;
+    el('totLaps').textContent = totL;
+    el('totKm').textContent = fmtKM(totK);
+    el('updated').textContent = `Päivitetty ${new Date().toLocaleTimeString()}`;
+    setOnline(true);
+  }catch(e){
+    setOnline(false);
+    // Näytä viimeisin päivitysaika silti harmaana
+  }
+}
+
+function setOnline(ok){
+  el('status').textContent = ok ? 'Online' : 'Offline';
+  el('dot').classList.toggle('online', ok);
+}
+
+refresh();
+setInterval(refresh, 1500);
+</script>
+</body>
+</html>
